@@ -3,8 +3,8 @@
 ## Run
 
 ```bash
-git clone https://github.com/your-org/auction-service.git
-cd auction-service
+git clone https://github.com/VladSkopenko/UD_test_task.git
+cd UD_test_task
 docker compose up --build
 ```
 
