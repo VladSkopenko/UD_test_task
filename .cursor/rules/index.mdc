@@ -1,0 +1,65 @@
+---
+description: "Core project rules and coding standards for the FastAPI backend"
+alwaysApply: true
+---
+
+# Core Project Rules
+
+## Code Style and Language
+- Always write code and comments in **English**
+- Use `async/await` for all database operations
+- Follow **PEP 8** style guide
+- Add **type hints** to all functions
+- Use **Google style docstrings**
+
+## Documentation
+- Always add docstrings to classes and methods
+- Document complex business logic
+- Include examples in docstrings
+- After modifying any method, verify that its docstring and OpenAPI description match the actual implementation
+- **NEVER create README.md or any .md documentation files unless explicitly requested by the user**
+
+## CRITICAL: No Direct Code Changes
+- **You must NOT change any code (including migrations) without explicit user confirmation**
+- Do not edit, create, or delete project files on your own initiative
+- First: show the proposed changes (e.g. in code blocks or diff) and clearly ask: "Apply these changes?"
+- Only after the user explicitly agrees (e.g. "yes", "apply", "do it") — then use the edit/write tool
+- This applies to all code: application code, migrations, configs, tests — everything
+- If the user did not clearly ask to "apply" or "write" the changes, do not modify files
+
+## CRITICAL: Database Migrations
+- **NEVER EVER delete migration files from `migrations/versions/` directory**
+- **NEVER modify existing migration files that have already been applied**
+- Migration files are immutable once created and committed
+- Even if a migration has errors or needs to be reverted, create a NEW migration to fix it
+- The only way to revert changes is through `alembic downgrade` command, NOT by deleting or editing files
+- Deleting or modifying migrations breaks the migration history and can corrupt the database state
+- **If unsure about migrations, ALWAYS ask the user first**
+
+## Communication and Requirements
+- **ALWAYS ask clarifying questions** if the user's request is vague or unclear
+- Work **STRICTLY according to the user's prompt** - do not over-engineer or add unrequested features
+- Do NOT write documentation, descriptions, or additional code unless explicitly requested
+- If the prompt is ambiguous, ask specific questions before proceeding
+- Focus on the minimal implementation that satisfies the exact request
+
+## Project Stack
+- This is a **FastAPI project** with async SQLAlchemy
+- Use **Pydantic v2** for data validation
+- Follow existing project patterns and naming conventions
+- **No `Any`** – all types must be explicit (schemas, signatures). Use concrete models or typed dicts/lists, not `Any` or `dict[str, Any]`.
+
+## Core Coding Principles
+Apply these software engineering principles when writing code:
+- **DRY** (Don't Repeat Yourself) - Reuse existing methods, avoid duplication
+- **KISS** (Keep It Simple, Stupid) - Prefer simple solutions
+- **YAGNI** (You Aren't Gonna Need It) - Don't add functionality until needed
+- **SOLID** - Follow all 5 SOLID principles
+- **Single Responsibility** - Each function/class does one thing
+- **Separation of Concerns** - Different concerns in different modules
+- **Fail Fast** - Validate early, throw errors immediately
+- **Composition Over Inheritance** - Prefer composing objects
+- **Principle of Least Surprise** - Code should behave as expected
+- **Clean Code** - Readable, maintainable code with meaningful names
+
+**Before writing code, always check if existing methods can be reused**

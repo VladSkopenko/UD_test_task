@@ -1,0 +1,108 @@
+---
+description: "Pydantic schemas, validation, API stability, deprecation patterns, and type safety"
+globs:
+  - "src/app/**/schemas/**/*.py"
+  - "src/app/**/endpoints/**/*.py"
+alwaysApply: false
+---
+
+# API Schemas Guidelines (Pydantic v2)
+
+## Core Principles
+
+1. **NEVER delete fields** - always deprecate
+2. **No `Any` – type everything.** No `dict[str, Any]`, `list[Any]`, or `Any` in schemas or function signatures. Use concrete Pydantic models or typed structures (e.g. `TermsSchema`, `dict[str, str | int]`). This applies to all schema files and API contracts.
+3. **Validate everything** - use Pydantic for all data transfer
+4. **Use camelCase aliases** - for frontend compatibility
+
+## Schema Structure
+
+### Response Schema with camelCase Aliases
+
+```python
+from pydantic import BaseModel, Field, ConfigDict
+from uuid import UUID
+from datetime import datetime
+
+class OrderResponse(BaseModel):
+    """Order response schema with camelCase for frontend."""
+    
+    model_config = ConfigDict(from_attributes=True)
+    
+    id: UUID
+    display_id: str = Field(alias="displayId")
+    company_id: UUID = Field(alias="companyId")
+    status: OrderStatus
+    amount: float
+    created_at: datetime = Field(alias="createdAt")
+```
+
+## API Stability - Deprecation Pattern
+
+**NEVER delete fields from public API schemas!**
+
+```python
+class UserResponse(BaseModel):
+    """User response schema."""
+    
+    id: UUID
+    email: str
+    full_name: str
+    
+    # ✅ CORRECT: Deprecate old field
+    name: str | None = Field(
+        None,
+        deprecated=True,
+        description="Deprecated: Use full_name instead. Will be removed in v3.0 (2026-06-01)"
+    )
+    
+    @model_validator(mode="after")
+    def populate_deprecated_fields(self) -> "UserResponse":
+        """Populate deprecated fields for backward compatibility."""
+        if self.full_name and not self.name:
+            self.name = self.full_name
+        return self
+```
+
+## Type Hints
+
+### Use Union Syntax (Python 3.10+)
+
+```python
+# ✅ CORRECT: Modern union syntax
+name: str | None = None
+items: list[str] = []
+
+# ❌ AVOID: Old Optional syntax
+from typing import Optional
+name: Optional[str] = None
+```
+
+### Never Use Any
+
+```python
+# ❌ BAD: Any type loses all validation
+from typing import Any
+data: Any
+
+# ✅ GOOD: Specific types
+data: dict[str, str | int]
+```
+
+## Internal Type Safety
+
+**Use Pydantic for ALL data structures, even internal:**
+
+```python
+# ❌ BAD: Raw dict in function signature
+def calculate_total(order_data: dict) -> float:
+    return order_data["amount"] * order_data["price"]
+
+# ✅ GOOD: Pydantic model
+class OrderCalculation(BaseModel):
+    amount: float
+    price: float
+
+def calculate_total(order_data: OrderCalculation) -> float:
+    return order_data.amount * order_data.price
+```

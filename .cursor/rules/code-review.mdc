@@ -1,0 +1,139 @@
+---
+description: "Code review guidelines: security, performance, N+1 queries, race conditions, architecture"
+alwaysApply: false
+---
+
+# Code Review Guide
+
+## When to Apply This Rule
+Use this when reviewing code, checking for bugs, or analyzing performance issues.
+
+## 1. Database Performance
+
+### N+1 Queries (Common Problem!)
+```python
+# ❌ BAD: N+1 problem
+orders = await db.execute(select(Order))
+for order in orders.scalars():
+    company = await db.get(Company, order.company_id)  # N queries!
+
+# ✅ GOOD: Use selectinload/joinedload
+stmt = select(Order).options(selectinload(Order.company))
+orders = await db.execute(stmt)
+```
+
+### JSONB Fields - Use Lambda with Explicit Structure
+
+**CRITICAL:** Always define JSONB structure explicitly!
+
+```python
+# ❌ BAD: Empty without structure
+metadata: Mapped[dict] = mapped_column(JSONB, default=lambda: {})
+
+# ✅ GOOD: Actual structure visible
+weight_data: Mapped[dict] = mapped_column(
+    JSONB,
+    nullable=False,
+    default=lambda: {
+        "netto": "",
+        "brutto": "",
+        "tara": ""
+    }
+)
+```
+
+**When reviewing:** 
+- If you see `default=lambda: []` or `default=lambda: {}` → **Ask for structure!**
+
+### Raw SQL - ONLY FOR READING!
+```python
+# ✅ OK: Raw SQL for complex read query
+stmt = text("SELECT * FROM orders WHERE ...")
+result = await db.execute(stmt)
+
+# ❌ FORBIDDEN: Raw SQL for modifications
+await db.execute(text("UPDATE orders SET status = 'active'"))  # NO!
+```
+
+## 2. Race Conditions
+
+```python
+# ❌ BAD: Race condition
+order = await db.get(Order, order_id)
+if order.status == OrderStatus.PENDING:
+    order.status = OrderStatus.PROCESSING
+    await db.commit()
+
+# ✅ GOOD: Atomic update
+stmt = (
+    update(Order)
+    .where(Order.id == order_id)
+    .where(Order.status == OrderStatus.PENDING)
+    .values(status=OrderStatus.PROCESSING)
+)
+result = await db.execute(stmt)
+if result.rowcount == 0:
+    raise HTTPException(409, "Order already processed")
+```
+
+## 3. Architecture
+
+### Business Logic in Service Layer
+
+```python
+# ❌ BAD: Business logic in endpoint
+@router.post("/orders")
+async def create_order(data: OrderCreate, db: AsyncSession = Depends(get_db)):
+    if data.amount <= 0:
+        raise HTTPException(400, "Amount must be positive")
+    order = Order(**data.model_dump())
+    db.add(order)
+    await db.commit()
+    return order
+
+# ✅ GOOD: Thin endpoint, logic in service
+@router.post("/orders")
+async def create_order(data: OrderCreate, db: AsyncSession = Depends(get_db)):
+    order = await order_service.create_order(db, data)
+    await db.commit()
+    return order
+```
+
+### Feature Isolation - NO Cross-Feature Imports!
+
+**CRITICAL:** Never import from other features!
+
+```python
+# ❌ BAD: Importing from other feature
+from src.app.features.orders.models.order import Order
+
+# ✅ GOOD: Only import from common/config
+from src.app.common.base import Base
+from src.app.config.database import get_db
+```
+
+**Allowed imports:**
+- `src.app.common/*`
+- `src.app.config/*`
+- Same feature modules
+- Standard library
+
+## Quick Checklist
+
+**Database:**
+- [ ] No N+1 queries (use selectinload/joinedload)
+- [ ] Indexes on foreign keys
+- [ ] JSONB fields use lambda with explicit structure
+- [ ] No raw SQL for INSERT/UPDATE/DELETE
+
+**Type Safety:**
+- [ ] All functions have type hints
+- [ ] Pydantic models for data transfer (no plain dict)
+
+**Concurrency:**
+- [ ] No race conditions (atomic updates)
+
+**Architecture:**
+- [ ] Business logic in service layer
+- [ ] No cross-feature imports
+- [ ] Fail Fast - validate early

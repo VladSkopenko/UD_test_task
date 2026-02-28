@@ -1,0 +1,5 @@
+DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/auction_db
+
+AUCTION_LOT_DURATION_MINUTES=5
+AUCTION_EXTEND_MINUTES=1
+AUCTION_CLOSE_LOTS_INTERVAL_SEC=30

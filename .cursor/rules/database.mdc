@@ -1,0 +1,161 @@
+---
+description: "SQLAlchemy models, queries, transactions, indexes, and database best practices"
+globs: 
+  - "src/app/**/models/**/*.py"
+  - "migrations/**/*.py"
+  - "src/app/**/repositories/**/*.py"
+alwaysApply: false
+---
+
+# Database Guidelines (SQLAlchemy + PostgreSQL)
+
+## SQLAlchemy Models
+
+### Basic Model Structure
+```python
+from uuid import UUID
+from datetime import datetime
+from sqlalchemy import String, DateTime, func, text, ForeignKey
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.dialects.postgresql import UUID as PGUUID, JSONB
+from src.app.common.base import Base
+
+class Example(Base):
+    __tablename__ = "examples"
+    
+    # Primary key with UUID
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), 
+        primary_key=True, 
+        server_default=text("gen_random_uuid()"), 
+        index=True
+    )
+    
+    # Foreign keys
+    company_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), 
+        ForeignKey("companies.id"), 
+        nullable=False
+    )
+    
+    # Timestamps (ALWAYS with timezone=True!)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),  # CRITICAL: Always timezone-aware!
+        default=func.now(),
+        nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),  # CRITICAL: Always timezone-aware!
+        default=func.now(),
+        onupdate=func.now(),
+        nullable=False
+    )
+```
+
+### JSONB Columns with Defaults
+
+**CRITICAL: Always use lambda with explicit structure showing expected fields!**
+
+```python
+# ❌ BAD: Empty without visible structure
+metadata: Mapped[dict] = mapped_column(JSONB, default=lambda: {})
+items: Mapped[list] = mapped_column(JSONB, default=lambda: [])
+
+# ✅ GOOD: Structure visible in lambda code
+weight_data: Mapped[dict] = mapped_column(
+    JSONB,
+    nullable=False,
+    default=lambda: {
+        "netto": "",
+        "brutto": "",
+        "tara": ""
+    }  # Clear field structure!
+)
+
+# ✅ OK: Simple list of primitives (structure obvious)
+photo_urls: Mapped[list] = mapped_column(
+    JSONB,
+    nullable=True,
+    default=lambda: []  # List of URL strings - obvious
+)
+```
+
+**Rule:** Structure must be in lambda CODE, not comments!
+
+### Relationships
+```python
+# Always specify back_populates
+class Order(Base):
+    company_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), 
+        ForeignKey("companies.id")
+    )
+    company = relationship("Company", back_populates="orders")
+
+class Company(Base):
+    orders = relationship("Order", back_populates="company")
+```
+
+## Query Patterns
+
+### Avoid N+1 Queries
+```python
+# ❌ BAD: N+1 problem
+orders = await db.execute(select(Order))
+for order in orders.scalars():
+    print(order.company.name)  # N additional queries!
+
+# ✅ GOOD: Use selectinload for collections
+from sqlalchemy.orm import selectinload
+
+stmt = select(Order).options(selectinload(Order.bids))
+result = await db.execute(stmt)
+orders = result.scalars().all()
+```
+
+## Transactions
+
+```python
+# ✅ Explicit transaction for multiple operations
+async def create_order_with_bids(
+    db: AsyncSession,
+    order_data: OrderCreate,
+    bids_data: list[BidCreate]
+) -> Order:
+    async with db.begin():
+        order = Order(**order_data.model_dump())
+        db.add(order)
+        await db.flush()  # Get order.id
+        
+        for bid_data in bids_data:
+            bid = Bid(order_id=order.id, **bid_data.model_dump())
+            db.add(bid)
+        
+        await db.flush()
+        await db.refresh(order)
+        
+    return order
+```
+
+## Common Pitfalls
+
+### ❌ Missing indexes on foreign keys
+```python
+company_id: Mapped[UUID] = mapped_column(
+    PGUUID(as_uuid=True), 
+    ForeignKey("companies.id"),
+    index=True  # Don't forget!
+)
+```
+
+### ❌ Not using async/await
+```python
+result = await db.execute(stmt)  # ✅
+result = db.execute(stmt)  # ❌
+```
+
+## Enums in migrations
+
+**When adding a new enum value in a migration, always use UPPERCASE in the migration.**
+
+- In the migration file: `op.execute("ALTER TYPE enum_type_name ADD VALUE 'ARCHIVED';")` — the value in the migration must be UPPERCASE.

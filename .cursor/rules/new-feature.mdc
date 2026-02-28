@@ -1,0 +1,122 @@
+---
+description: "Step-by-step guide for implementing new features with proper structure and patterns"
+alwaysApply: false
+---
+
+# New Feature Development Guide
+
+## Feature Structure
+
+Every feature follows this structure:
+
+```
+src/app/features/<feature_name>/
+├── models/              # SQLAlchemy models
+│   ├── __init__.py
+│   └── <model>.py
+├── schemas/             # Pydantic schemas
+│   ├── __init__.py
+│   └── <schema>.py
+├── services/            # Business logic
+│   ├── __init__.py
+│   └── <service>.py
+├── repositories/        # Database access (optional)
+│   ├── __init__.py
+│   └── <repository>.py
+├── endpoints/           # FastAPI routers
+│   ├── __init__.py
+│   └── <router>.py
+└── __init__.py
+```
+
+## Dependency Injection Pattern
+
+### Service Layer
+
+```python
+from typing import Annotated
+from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+
+class OrderService:
+    """Service for order business logic."""
+    
+    async def create_order(self, db: AsyncSession, data: OrderCreate):
+        # Implementation
+        pass
+
+async def get_order_service() -> OrderService:
+    """Get order service dependency."""
+    return OrderService()
+
+OrderServiceDep = Annotated[OrderService, Depends(get_order_service)]
+```
+
+### Endpoint Usage
+
+```python
+from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+from src.app.config.database import get_db
+from ..services.order_service import OrderServiceDep
+
+router = APIRouter(prefix="/orders", tags=["Orders"])
+
+@router.post("/")
+async def create_order(
+    order_data: OrderCreate,
+    db: AsyncSession = Depends(get_db),
+    service: OrderServiceDep = None
+):
+    result = await service.create_order(db, order_data)
+    await db.commit()
+    return result
+```
+
+## Key Patterns
+
+### Feature Isolation - NO Cross-Feature Imports!
+
+**CRITICAL:** Never import from other features!
+
+```python
+# ❌ BAD
+from src.app.features.orders.models.order import Order
+
+# ✅ GOOD
+from src.app.common.base import Base
+from src.app.config.database import get_db
+from ..models.order import Order  # Same feature OK
+```
+
+### Model Basics
+- Use `DateTime(timezone=True)` for timestamps
+- JSONB fields with explicit lambda structure
+- Add indexes on foreign keys
+- Use `back_populates` in relationships
+
+### Service Layer
+- All business logic in services
+- Fail Fast - validate early
+- Use Pydantic models between functions
+- Don't commit in services - only flush/refresh
+
+### Endpoints
+- Thin layer - call service, commit transaction
+- Always use `response_model`
+
+## Development Checklist
+
+- [ ] Feature structure created
+- [ ] Models with proper types and indexes
+- [ ] Timestamps with `DateTime(timezone=True)`
+- [ ] JSONB fields with explicit lambda structure
+- [ ] Pydantic schemas for validation
+- [ ] Service layer with business logic
+- [ ] Dependency injection configured
+- [ ] Endpoints with OpenAPI docs
+- [ ] Migration created and applied
+- [ ] Type hints on all functions
+- [ ] Docstrings for public methods
+- [ ] No cross-feature imports
+- [ ] N+1 queries avoided
